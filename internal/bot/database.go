@@ -24,7 +24,7 @@ SELECT
 FROM
 	bot.creator_channels
 WHERE
-	(id = $1::int8 OR $1::int8 IS NULL)
+	(id = $1::int8 OR $1 IS NULL)
 `
 	return database.One[CreatorChannel](ctx, db.pool, query, id)
 }
@@ -47,7 +47,7 @@ SELECT
 FROM
 	bot.temporary_voice_channels
 WHERE
-	(id = $1::int8 OR $1::int8 IS NULL)
+	(id = $1::int8 OR $1 IS NULL)
 `
 	return database.One[TemporaryVoiceChannel](ctx, db.pool, query, id)
 }
