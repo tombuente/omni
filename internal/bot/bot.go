@@ -15,6 +15,24 @@ type Bot struct {
 	db Database
 }
 
+var (
+	commands = []*dgo.ApplicationCommand{
+		{
+			Name:        "creator-channel",
+			Description: "Creates a reactor channel",
+			Options: []*dgo.ApplicationCommandOption{
+				{
+					Type:        dgo.ApplicationCommandOptionInteger,
+					Name:        "user-limit",
+					Description: "User limit",
+					MinValue:    newIntOption(1),
+					Required:    false,
+				},
+			},
+		},
+	}
+)
+
 func Make(token string, db Database) (Bot, error) {
 	session, err := dgo.New(fmt.Sprintf("Bot %v", token))
 	if err != nil {
@@ -35,19 +53,31 @@ func (b Bot) Run(stop chan os.Signal) error {
 	}
 	defer b.session.Close()
 
-	b.addHandlers()
+	appID := b.session.State.User.ID
+	for _, cmd := range commands {
+		_, err := b.session.ApplicationCommandCreate(appID, "1242245611298885683", cmd)
+		if err != nil {
+			slog.Error("Unable to create application command", "command", cmd.Name, "error", err)
+		}
+	}
+
+	b.session.AddHandler(b.voiceStateUpdateCreatorChannel)
+	b.session.AddHandler(b.voiceStateUpdateTemporaryVoiceChannel)
+
+	cmdHandlers := make(map[string]func(s *dgo.Session, i *dgo.InteractionCreate), len(commands))
+	cmdHandlers["creator-channel"] = b.cmdCreatorChannel
+	b.session.AddHandler(func(s *dgo.Session, i *dgo.InteractionCreate) {
+		if h, ok := cmdHandlers[i.ApplicationCommandData().Name]; ok {
+			h(s, i)
+		}
+	})
 
 	<-stop
 	return nil
 }
 
-func (b Bot) addHandlers() {
-	b.session.AddHandler(b.voiceStateUpdateCreatorChannel)
-	b.session.AddHandler(b.voiceStateUpdateTemporaryVoiceChannel)
-}
-
-func (b Bot) voiceStateUpdateCreatorChannel(s *dgo.Session, event *dgo.VoiceStateUpdate) {
-	channelID := event.ChannelID
+func (b Bot) voiceStateUpdateCreatorChannel(s *dgo.Session, e *dgo.VoiceStateUpdate) {
+	channelID := e.ChannelID
 	if channelID == "" {
 		// User left the voice channel
 		return
@@ -67,7 +97,7 @@ func (b Bot) voiceStateUpdateCreatorChannel(s *dgo.Session, event *dgo.VoiceStat
 	tempVoiceChannel, err := s.GuildChannelCreateComplex(
 		creatorChannel.GuildID,
 		dgo.GuildChannelCreateData{
-			Name:      event.Member.User.Username,
+			Name:      e.Member.User.Username,
 			Type:      dgo.ChannelTypeGuildVoice,
 			UserLimit: creatorChannel.UserLimit,
 			Position:  creatorChannel.Position + 1,
@@ -89,7 +119,7 @@ func (b Bot) voiceStateUpdateCreatorChannel(s *dgo.Session, event *dgo.VoiceStat
 		return
 	}
 
-	if err := s.GuildMemberMove(event.GuildID, event.UserID, &tempVoiceChannel.ID); err != nil {
+	if err := s.GuildMemberMove(e.GuildID, e.UserID, &tempVoiceChannel.ID); err != nil {
 		slog.Error("Unable to move user to temporary voice channel", "error", err)
 
 		// Remove orphan
@@ -101,38 +131,64 @@ func (b Bot) voiceStateUpdateCreatorChannel(s *dgo.Session, event *dgo.VoiceStat
 	}
 }
 
-func (b Bot) voiceStateUpdateTemporaryVoiceChannel(s *dgo.Session, event *dgo.VoiceStateUpdate) {
-	guild, err := b.session.State.Guild(event.GuildID)
+func (b Bot) voiceStateUpdateTemporaryVoiceChannel(s *dgo.Session, e *dgo.VoiceStateUpdate) {
+	guild, err := b.session.State.Guild(e.GuildID)
 	if err != nil {
 		slog.Error("Unable to get guild from state cache", "error", err)
 		return
 	}
 
-	if event.BeforeUpdate == nil {
+	if e.BeforeUpdate == nil {
 		// User joined a channel without having been in a channel previously
 		return
 	}
 
-	chID := event.BeforeUpdate.ChannelID
-	chHasUsers := voiceChannelHasUsers(guild, chID)
-	if chHasUsers {
+	channelID := e.BeforeUpdate.ChannelID
+	channelHasUsers := channelHasUsers(guild, channelID)
+	if channelHasUsers {
 		// Must not delete a temporary voice channel if users are still in it
 		return
 	}
 
-	_, err = b.db.temporaryVoiceChannel(context.Background(), chID)
+	_, err = b.db.temporaryVoiceChannel(context.Background(), channelID)
 	if err != nil {
-		slog.Error("Unable to query temporary voice channel from database", "id", chID, "error", err)
+		slog.Error("Unable to query temporary voice channel from database", "id", channelID, "error", err)
 		return
 	}
 
-	if _, err := s.ChannelDelete(chID); err != nil {
+	if _, err := s.ChannelDelete(channelID); err != nil {
 		slog.Error("Unable to delete voice channel", "error", err)
 		return
 	}
 }
 
-func voiceChannelHasUsers(guild *dgo.Guild, channelID string) bool {
+func (b Bot) cmdCreatorChannel(s *dgo.Session, i *dgo.InteractionCreate) {
+	data := dgo.GuildChannelCreateData{
+		Name: "Creator Channel",
+		Type: dgo.ChannelTypeGuildVoice,
+	}
+
+	channel, err := s.GuildChannelCreateComplex(i.GuildID, data)
+	if err != nil {
+		slog.Error("Unable to create creator channel", "error", err)
+		return
+	}
+
+	if _, err := b.db.createCreatorChannel(context.Background(), CreatorChannel{ID: channel.ID}); err != nil {
+		slog.Error("Unable to create creator channel in database", "error", err)
+		// TODO remove out of sync channel
+		return
+	}
+
+	s.InteractionRespond(i.Interaction, &dgo.InteractionResponse{
+		Type: dgo.InteractionResponseChannelMessageWithSource,
+		Data: &dgo.InteractionResponseData{
+			Content: "Created creator channel",
+		},
+	})
+}
+
+func channelHasUsers(guild *dgo.Guild, channelID string) bool {
 	hasUsers := false
 	for _, voiceState := range guild.VoiceStates {
 		if voiceState.ChannelID == channelID {
@@ -142,4 +198,9 @@ func voiceChannelHasUsers(guild *dgo.Guild, channelID string) bool {
 	}
 
 	return hasUsers
+}
+
+func newIntOption(value int) *float64 {
+	v := float64(value)
+	return &v
 }

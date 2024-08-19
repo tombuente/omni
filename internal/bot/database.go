@@ -17,6 +17,17 @@ func MakeDatabase(pool *pgxpool.Pool) Database {
 	}
 }
 
+func (db Database) createCreatorChannel(ctx context.Context, params CreatorChannel) (CreatorChannel, error) {
+	const query = `
+INSERT INTO 
+	bot.creator_channels (id)
+VALUES
+	($1::int8)
+RETURNING *
+`
+	return database.One[CreatorChannel](ctx, db.pool, query, params.ID)
+}
+
 func (db Database) creatorChannel(ctx context.Context, id string) (CreatorChannel, error) {
 	const query = `
 SELECT
@@ -29,17 +40,6 @@ WHERE
 	return database.One[CreatorChannel](ctx, db.pool, query, id)
 }
 
-func (db Database) createTemporaryVoiceChannel(ctx context.Context, params TemporaryVoiceChannel) (TemporaryVoiceChannel, error) {
-	const query = `
-INSERT INTO 
-	bot.temporary_voice_channels (id)
-VALUES
-	($1::int8)
-RETURNING *
-`
-	return database.One[TemporaryVoiceChannel](ctx, db.pool, query, params.ID)
-}
-
 func (db Database) temporaryVoiceChannel(ctx context.Context, id string) (TemporaryVoiceChannel, error) {
 	const query = `
 SELECT
@@ -50,4 +50,15 @@ WHERE
 	(id = $1::int8 OR $1 IS NULL)
 `
 	return database.One[TemporaryVoiceChannel](ctx, db.pool, query, id)
+}
+
+func (db Database) createTemporaryVoiceChannel(ctx context.Context, params TemporaryVoiceChannel) (TemporaryVoiceChannel, error) {
+	const query = `
+INSERT INTO 
+	bot.temporary_voice_channels (id)
+VALUES
+	($1::int8)
+RETURNING *
+`
+	return database.One[TemporaryVoiceChannel](ctx, db.pool, query, params.ID)
 }
