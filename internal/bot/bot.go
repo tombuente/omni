@@ -18,14 +18,23 @@ type Bot struct {
 var commands = []*dgo.ApplicationCommand{
 	{
 		Name:        "creator-channel",
-		Description: "Creates a reactor channel",
+		Description: "Creates a creactor channel",
+	},
+	{
+		Name:        "channel-position",
+		Description: "Update channel position",
 		Options: []*dgo.ApplicationCommandOption{
 			{
+				Type:        dgo.ApplicationCommandOptionChannel,
+				Name:        "channel",
+				Description: "Channel",
+				Required:    true,
+			},
+			{
 				Type:        dgo.ApplicationCommandOptionInteger,
-				Name:        "user-limit",
-				Description: "User limit",
-				MinValue:    newIntOption(1),
-				Required:    false,
+				Name:        "position",
+				Description: "New Position",
+				Required:    true,
 			},
 		},
 	},
@@ -64,6 +73,7 @@ func (b Bot) Run(stop chan os.Signal) error {
 
 	cmdHandlers := make(map[string]func(s *dgo.Session, i *dgo.InteractionCreate), len(commands))
 	cmdHandlers["creator-channel"] = cmd(b.cmdCreatorChannel)
+	cmdHandlers["channel-position"] = cmd(b.cmdUpdateChannelPos)
 	b.session.AddHandler(func(s *dgo.Session, i *dgo.InteractionCreate) {
 		if h, ok := cmdHandlers[i.ApplicationCommandData().Name]; ok {
 			h(s, i)
@@ -172,13 +182,23 @@ func (b Bot) cmdCreatorChannel(i *dgo.InteractionCreate) error {
 		return fmt.Errorf("unable to create creator channel in database: %w", err)
 	}
 
-	b.session.InteractionRespond(i.Interaction, &dgo.InteractionResponse{
-		Type: dgo.InteractionResponseChannelMessageWithSource,
-		Data: &dgo.InteractionResponseData{
-			Content: "Created creator channel",
-		},
-	})
+	b.interactionRespond(i.Interaction, "Created creator channel")
+	return nil
+}
 
+func (b Bot) cmdUpdateChannelPos(i *dgo.InteractionCreate) error {
+	options := interationCreateOptions(i)
+	channel := options["channel"] // required
+	pos := options["position"]    // required
+
+	data := &dgo.ChannelEdit{
+		Position: newInt(int(pos.IntValue())),
+	}
+	if _, err := b.session.ChannelEdit(channel.ChannelValue(nil).ID, data); err != nil {
+		return fmt.Errorf("unable to update channel position: %w", err)
+	}
+
+	b.interactionRespond(i.Interaction, "Updated channel")
 	return nil
 }
 
@@ -198,6 +218,24 @@ func cmd(handleFunc func(i *dgo.InteractionCreate) error) func(_ *dgo.Session, i
 	}
 }
 
+func interationCreateOptions(i *dgo.InteractionCreate) map[string]*dgo.ApplicationCommandInteractionDataOption {
+	options := make(map[string]*dgo.ApplicationCommandInteractionDataOption, len(i.ApplicationCommandData().Options))
+	for _, option := range i.ApplicationCommandData().Options {
+		options[option.Name] = option
+	}
+
+	return options
+}
+
+func (b Bot) interactionRespond(interaction *dgo.Interaction, msg string) {
+	b.session.InteractionRespond(interaction, &dgo.InteractionResponse{
+		Type: dgo.InteractionResponseChannelMessageWithSource,
+		Data: &dgo.InteractionResponseData{
+			Content: msg,
+		},
+	})
+}
+
 func channelHasUsers(guild *dgo.Guild, channelID string) bool {
 	hasUsers := false
 	for _, voiceState := range guild.VoiceStates {
@@ -210,7 +248,11 @@ func channelHasUsers(guild *dgo.Guild, channelID string) bool {
 	return hasUsers
 }
 
-func newIntOption(value int) *float64 {
-	v := float64(value)
-	return &v
+// func newIntOption(value int) *float64 {
+// 	v := float64(value)
+// 	return &v
+// }
+
+func newInt(value int) *int {
+	return &value
 }
