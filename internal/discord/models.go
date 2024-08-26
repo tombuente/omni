@@ -1,4 +1,4 @@
-package bot
+package discord
 
 type CreatorChannel struct {
 	ID string `db:"id"`

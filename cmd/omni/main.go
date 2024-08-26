@@ -8,7 +8,7 @@ import (
 	"os/signal"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/tombuente/omni/internal/bot"
+	"github.com/tombuente/omni/internal/discord"
 )
 
 var (
@@ -30,9 +30,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	db := bot.MakeDatabase(pool)
+	db := discord.MakeDatabase(pool)
 
-	b, err := bot.Make(botToken, db)
+	b, err := discord.Make(botToken, db)
 	if err != nil {
 		slog.Error("Unable to make bot instance", "error", err)
 		os.Exit(1)
