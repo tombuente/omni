@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tombuente/omni/internal/discord"
@@ -22,6 +23,10 @@ var (
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	var wg sync.WaitGroup
+
 	// postgres://username:password@host:port/database_name
 	connString := fmt.Sprintf("postgres://%v:%v@%v:%v/%v", postgresUser, postgresPassword, postgresHost, postgresPort, postgresDB)
 	pool, err := pgxpool.New(context.Background(), connString)
@@ -31,19 +36,25 @@ func main() {
 	}
 
 	db := discord.MakeDatabase(pool)
-
 	b, err := discord.Make(botToken, db)
 	if err != nil {
 		slog.Error("Unable to make bot instance", "error", err)
 		os.Exit(1)
 	}
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := b.Run(ctx); err != nil {
+			slog.Error("Encountered an error while running the bot", "error", err)
+		}
+	}()
+
 	slog.Info("Press Ctrl+C to exit")
 
-	if err := b.Run(stop); err != nil {
-		slog.Error("Encountered an error while running the bot", "error", err)
-		os.Exit(1)
-	}
+	<-ctx.Done()
+	slog.Info("Gracefully shutting down...")
+	stop()
+
+	wg.Wait()
 }

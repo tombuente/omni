@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 
 	dgo "github.com/bwmarrin/discordgo"
 	"github.com/tombuente/omni/internal/apperrors"
@@ -55,7 +54,7 @@ func Make(token string, db Database) (Bot, error) {
 	}, nil
 }
 
-func (b Bot) Run(stop chan os.Signal) error {
+func (b Bot) Run(ctx context.Context) error {
 	if err := b.session.Open(); err != nil {
 		return fmt.Errorf("unable to open session: %w", err)
 	}
@@ -81,7 +80,7 @@ func (b Bot) Run(stop chan os.Signal) error {
 		}
 	})
 
-	<-stop
+	<-ctx.Done()
 	return nil
 }
 
