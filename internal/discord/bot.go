@@ -139,23 +139,23 @@ func (b Bot) voiceStateUpdateTemporaryVoiceChannel(e *dgo.VoiceStateUpdate) erro
 		return nil
 	}
 
-	channelID := e.BeforeUpdate.ChannelID
+	chID := e.BeforeUpdate.ChannelID
 
-	channelHasUsers := channelHasUsers(guild, channelID)
-	if channelHasUsers {
+	hasUsers := channelHasUsers(guild, chID)
+	if hasUsers {
 		// Must not delete a temporary voice channel if users are still in it.
 		return nil
 	}
 
-	_, err = b.db.temporaryVoiceChannel(context.Background(), channelID)
+	_, err = b.db.temporaryVoiceChannel(context.Background(), chID)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return nil
 		}
-		return fmt.Errorf("unable to query temporary voice channel (id=%v) from database: %w", channelID, err)
+		return fmt.Errorf("unable to query temporary voice channel (id=%v) from database: %w", chID, err)
 	}
 
-	if _, err := b.session.ChannelDelete(channelID); err != nil {
+	if _, err := b.session.ChannelDelete(chID); err != nil {
 		return fmt.Errorf("unable to delete voice channel: %w", err)
 	}
 
@@ -169,13 +169,13 @@ func (b Bot) commandCreatorChannel(i *dgo.InteractionCreate) error {
 		Type: dgo.ChannelTypeGuildVoice,
 	}
 
-	channel, err := b.session.GuildChannelCreateComplex(i.GuildID, data)
+	ch, err := b.session.GuildChannelCreateComplex(i.GuildID, data)
 	if err != nil {
 		return fmt.Errorf("unable to create creator channel: %w", err)
 	}
 
-	if _, err := b.db.createCreatorChannel(context.Background(), CreatorChannel{ID: channel.ID}); err != nil {
-		if _, err := b.session.ChannelDelete(channel.ID); err != nil {
+	if _, err := b.db.createCreatorChannel(context.Background(), CreatorChannel{ID: ch.ID}); err != nil {
+		if _, err := b.session.ChannelDelete(ch.ID); err != nil {
 			slog.Warn("Unable to delete creator channel that is not tracked in the database")
 		}
 
@@ -187,13 +187,13 @@ func (b Bot) commandCreatorChannel(i *dgo.InteractionCreate) error {
 
 func (b Bot) cmdUpdateChannelPos(i *dgo.InteractionCreate) error {
 	options := interactionOptions(i)
-	channel := options["channel"] // required
-	pos := options["position"]    // required
+	ch := options["channel"]   // required
+	pos := options["position"] // required
 
 	data := &dgo.ChannelEdit{
 		Position: newInt(int(pos.IntValue())),
 	}
-	if _, err := b.session.ChannelEdit(channel.ChannelValue(nil).ID, data); err != nil {
+	if _, err := b.session.ChannelEdit(ch.ChannelValue(nil).ID, data); err != nil {
 		_ = b.interactionRespond(i.Interaction, "Unable to update channel")
 		return fmt.Errorf("unable to update channel position: %w", err)
 	}
@@ -214,20 +214,20 @@ func (b Bot) createTemporaryVoiceChannel(guildID string, name string, channelTyp
 		ParentID:  parentID,
 	}
 
-	channel, err := b.session.GuildChannelCreateComplex(guildID, data)
+	ch, err := b.session.GuildChannelCreateComplex(guildID, data)
 	if err != nil {
 		return &dgo.Channel{}, err
 	}
 
-	if _, err := b.db.createTemporaryVoiceChannel(context.Background(), TemporaryVoiceChannel{ID: channel.ID}); err != nil {
-		if _, err := b.session.ChannelDelete(channel.ID); err != nil {
+	if _, err := b.db.createTemporaryVoiceChannel(context.Background(), TemporaryVoiceChannel{ID: ch.ID}); err != nil {
+		if _, err := b.session.ChannelDelete(ch.ID); err != nil {
 			slog.Warn("A temporary voice channel was created but is not tracked in the database")
 		}
 
 		return &dgo.Channel{}, err
 	}
 
-	return channel, nil
+	return ch, nil
 }
 
 // interactionOptions returns a map where each key is an option name
