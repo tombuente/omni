@@ -6,8 +6,12 @@ services:
         condition: service_healthy
         restart: true
     restart: unless-stopped
+    stop_signal: SIGINT
+    stop_grace_period: 120s
     environment:
       BOT_TOKEN: ${BOT_TOKEN}
+      GUILD: ${GUILD}
+      DELETE_COMMANDS: ${DELETE_COMMANDS}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       POSTGRES_USER: ${POSTGRES_USER}
@@ -17,6 +21,8 @@ services:
   db:
     image: postgres
     restart: unless-stopped
+    stop_signal: SIGINT
+    stop_grace_period: 120s
     ports:
       - 5432:5432
     environment:
@@ -27,7 +33,7 @@ services:
       - data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
+      interval: 2s
 
 volumes:
   data:

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,7 +14,9 @@ import (
 )
 
 var (
-	botToken = os.Getenv("BOT_TOKEN")
+	botToken       = os.Getenv("BOT_TOKEN")
+	guild          = os.Getenv("GUILD")
+	deleteCommands = os.Getenv("DELETE_COMMANDS")
 
 	postgresHost     = os.Getenv("POSTGRES_HOST")
 	postgresPort     = os.Getenv("POSTGRES_PORT")
@@ -35,8 +38,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	var delCmds bool
+	if deleteCommands != "" {
+		delCmds, err = strconv.ParseBool(deleteCommands)
+		if err != nil {
+			slog.Error("Unable to parse remove commands env var", "error", err)
+			os.Exit(1)
+		}
+	}
+
 	db := discord.MakeDatabase(pool)
-	b, err := discord.Make(botToken, db)
+	config := discord.Config{
+		Token:          botToken,
+		Guild:          guild,
+		DeleteCommands: delCmds,
+	}
+	b, err := discord.Make(config, db)
 	if err != nil {
 		slog.Error("Unable to make bot instance", "error", err)
 		os.Exit(1)
